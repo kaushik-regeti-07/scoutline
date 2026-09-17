@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  domain    String?
+  notes     String?
+  createdAt DateTime @default(now())
+  briefs    Brief[]
+}
+
+model Brief {
+  id                String   @id @default(cuid())
+  companyId         String
+  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  summary           String
+  recommendedActions String[]
+  findings          Json
+  sourcesConsidered Int
+  createdAt         DateTime @default(now())
+}
