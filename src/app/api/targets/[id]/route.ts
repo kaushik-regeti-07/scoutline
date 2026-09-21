@@ -6,16 +6,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const company = await prisma.company.findUnique({
+  const target = await prisma.target.findUnique({
     where: { id },
     include: { briefs: { orderBy: { createdAt: "desc" } } },
   });
 
-  if (!company) {
-    return NextResponse.json({ error: "Company not found" }, { status: 404 });
+  if (!target) {
+    return NextResponse.json({ error: "Target not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ company });
+  return NextResponse.json({ target });
 }
 
 export async function DELETE(
@@ -23,6 +23,6 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  await prisma.company.delete({ where: { id } });
+  await prisma.target.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }
