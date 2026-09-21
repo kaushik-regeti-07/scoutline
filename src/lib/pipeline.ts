@@ -47,7 +47,10 @@ ${results.map((r, i) => `[${i}] ${r.title}\n${r.content.slice(0, 400)}`).join("\
   const raw = await callNemotron(
     "nano",
     [{ role: "user", content: prompt }],
-    { jsonMode: true, temperature: 0 }
+    // Nemotron is a reasoning model — its hidden "thinking" tokens count
+    // against maxTokens, so the budget needs real headroom above just the
+    // visible JSON output or the response gets cut off mid-object.
+    { jsonMode: true, temperature: 0, maxTokens: 3000 }
   );
 
   const parsed = safeJsonParse<{ decisions: { index: number; relevant: boolean }[] }>(
@@ -80,7 +83,7 @@ ${results.map((r, i) => `[${i}] ${r.title} (${r.url})\n${r.content.slice(0, 800)
   const raw = await callNemotron(
     "super",
     [{ role: "user", content: prompt }],
-    { jsonMode: true, temperature: 0.2, maxTokens: 2048 }
+    { jsonMode: true, temperature: 0.2, maxTokens: 8000 }
   );
 
   const parsed = safeJsonParse<{
@@ -124,7 +127,7 @@ ${JSON.stringify(findings, null, 2)}`;
   const raw = await callNemotron(
     "ultra",
     [{ role: "user", content: prompt }],
-    { jsonMode: true, temperature: 0.4, maxTokens: 1024 }
+    { jsonMode: true, temperature: 0.4, maxTokens: 4000 }
   );
 
   return safeJsonParse<{ summary: string; recommendedActions: string[] }>(raw, {

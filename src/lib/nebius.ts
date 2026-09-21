@@ -14,7 +14,7 @@ function getClient(): OpenAI {
 
   client = new OpenAI({
     apiKey,
-    baseURL: process.env.NEBIUS_API_BASE_URL ?? "https://api.studio.nebius.com/v1",
+    baseURL: process.env.NEBIUS_API_BASE_URL ?? "https://api.tokenfactory.nebius.com/v1/",
   });
   return client;
 }
@@ -28,9 +28,9 @@ const TIER_MODEL: Record<NemotronTier, string | undefined> = {
 };
 
 const TIER_DEFAULTS: Record<NemotronTier, string> = {
-  nano: "nvidia/nemotron-nano",
-  super: "nvidia/nemotron-super",
-  ultra: "nvidia/nemotron-3-ultra",
+  nano: "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B",
+  super: "nvidia/nemotron-3-super-120b-a12b",
+  ultra: "nvidia/Nemotron-3-Ultra-550b-a55b",
 };
 
 /**
