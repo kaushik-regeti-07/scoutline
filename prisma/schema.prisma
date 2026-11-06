@@ -7,22 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Company {
-  id        String   @id @default(cuid())
+enum TargetType {
+  COMPANY
+  PERSON
+}
+
+model Target {
+  id        String     @id @default(cuid())
   name      String
+  type      TargetType @default(COMPANY)
   domain    String?
   notes     String?
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
   briefs    Brief[]
 }
 
 model Brief {
-  id                String   @id @default(cuid())
-  companyId         String
-  company           Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  summary           String
+  id                 String   @id @default(cuid())
+  targetId           String
+  target             Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)
+  summary            String
   recommendedActions String[]
-  findings          Json
-  sourcesConsidered Int
-  createdAt         DateTime @default(now())
+  findings           Json
+  sourcesConsidered  Int
+  createdAt          DateTime @default(now())
 }

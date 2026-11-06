@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Scoutline — Autonomous Competitive Intelligence",
+  title: "Scoutline — Autonomous Intelligence Briefings",
   description:
-    "Scoutline watches your competitors and turns noisy web signals into decision-ready briefs, powered by tiered Nemotron models on Nebius Token Factory.",
+    "Scoutline turns noisy web signals about any company or person into a decision-ready brief, powered by tiered Nemotron models on Nebius Token Factory.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

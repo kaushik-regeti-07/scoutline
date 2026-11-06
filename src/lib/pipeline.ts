@@ -1,21 +1,62 @@
 import { callNemotron } from "./nebius";
 import { tavilySearch, type TavilyResult } from "./tavily";
 
+export type TargetType = "COMPANY" | "PERSON";
+
+export type Category =
+  | "pricing"
+  | "launch"
+  | "funding"
+  | "hiring"
+  | "sentiment"
+  | "career"
+  | "statement"
+  | "recognition"
+  | "other";
+
 export interface Finding {
   sourceUrl: string;
   sourceTitle: string;
-  category: "pricing" | "launch" | "funding" | "hiring" | "sentiment" | "other";
+  category: Category;
   summary: string;
   whyItMatters: string;
 }
 
 export interface Brief {
-  companyName: string;
+  targetName: string;
   summary: string;
   recommendedActions: string[];
   findings: Finding[];
   sourcesConsidered: number;
 }
+
+export type PipelineEvent =
+  | { type: "status"; step: "searching" | "triaging" | "condensing" | "synthesizing"; message: string }
+  | { type: "search_complete"; count: number }
+  | { type: "triage_complete"; relevantCount: number; totalCount: number }
+  | { type: "condense_complete"; findingsCount: number }
+  | { type: "done"; brief: Brief }
+  | { type: "error"; message: string };
+
+type Emit = (event: PipelineEvent) => void;
+
+const TYPE_CONFIG: Record<
+  TargetType,
+  { searchQuery: (name: string) => string; categories: Category[]; briefNoun: string; actionsNoun: string }
+> = {
+  COMPANY: {
+    searchQuery: (name) => `${name} pricing OR launch OR funding OR hiring news`,
+    categories: ["pricing", "launch", "funding", "hiring", "sentiment", "other"],
+    briefNoun: "competitive intelligence brief",
+    actionsNoun: "recommended actions the founder's team should take in response",
+  },
+  PERSON: {
+    searchQuery: (name) => `${name} interview OR profile OR recent news OR talk OR career`,
+    categories: ["career", "statement", "recognition", "sentiment", "other"],
+    briefNoun: "meeting-prep briefing",
+    actionsNoun: "specific talking points or things worth knowing before meeting them",
+  },
+};
 
 function safeJsonParse<T>(raw: string, fallback: T): T {
   try {
@@ -33,11 +74,10 @@ function safeJsonParse<T>(raw: string, fallback: T): T {
 async function triage(results: TavilyResult[]): Promise<TavilyResult[]> {
   if (results.length === 0) return [];
 
-  const prompt = `You are triaging web search results about a company for a competitive
-intelligence brief. For each result, decide if it's relevant (a real signal:
-pricing change, product launch, funding, hiring surge, notable sentiment/news)
-or irrelevant (unrelated company with a similar name, generic boilerplate,
-stale/duplicate content).
+  const prompt = `You are triaging web search results for an intelligence brief. For each
+result, decide if it's relevant (a real signal worth including) or irrelevant
+(unrelated entity with a similar name, generic boilerplate, stale/duplicate
+content).
 
 Return strict JSON: {"decisions": [{"index": number, "relevant": boolean}]}
 
@@ -69,13 +109,18 @@ ${results.map((r, i) => `[${i}] ${r.title}\n${r.content.slice(0, 400)}`).join("\
  * Step 2 — Nemotron Super condenses each surviving source into a
  * structured finding (category + summary + why it matters).
  */
-async function condense(companyName: string, results: TavilyResult[]): Promise<Finding[]> {
+async function condense(
+  targetName: string,
+  targetType: TargetType,
+  results: TavilyResult[]
+): Promise<Finding[]> {
   if (results.length === 0) return [];
 
-  const prompt = `You are condensing web sources into structured competitive-intelligence
-findings about "${companyName}". For each source below, produce one finding.
+  const config = TYPE_CONFIG[targetType];
+  const prompt = `You are condensing web sources into structured findings for a ${config.briefNoun}
+about "${targetName}". For each source below, produce one finding.
 
-Return strict JSON: {"findings": [{"index": number, "category": "pricing"|"launch"|"funding"|"hiring"|"sentiment"|"other", "summary": string, "whyItMatters": string}]}
+Return strict JSON: {"findings": [{"index": number, "category": ${config.categories.map((c) => `"${c}"`).join("|")}, "summary": string, "whyItMatters": string}]}
 
 Sources:
 ${results.map((r, i) => `[${i}] ${r.title} (${r.url})\n${r.content.slice(0, 800)}`).join("\n\n")}`;
@@ -87,7 +132,7 @@ ${results.map((r, i) => `[${i}] ${r.title} (${r.url})\n${r.content.slice(0, 800)
   );
 
   const parsed = safeJsonParse<{
-    findings: { index: number; category: Finding["category"]; summary: string; whyItMatters: string }[];
+    findings: { index: number; category: Category; summary: string; whyItMatters: string }[];
   }>(raw, { findings: [] });
 
   return parsed.findings
@@ -106,18 +151,23 @@ ${results.map((r, i) => `[${i}] ${r.title} (${r.url})\n${r.content.slice(0, 800)
  * the final strategic brief. This is the only step that needs the largest
  * model, since it's the only step doing genuine synthesis.
  */
-async function synthesize(companyName: string, findings: Finding[]): Promise<{ summary: string; recommendedActions: string[] }> {
+async function synthesize(
+  targetName: string,
+  targetType: TargetType,
+  findings: Finding[]
+): Promise<{ summary: string; recommendedActions: string[] }> {
+  const config = TYPE_CONFIG[targetType];
+
   if (findings.length === 0) {
     return {
-      summary: `No notable competitive signals found for ${companyName} in the last two weeks.`,
+      summary: `No notable signals found for ${targetName} in the last two weeks.`,
       recommendedActions: [],
     };
   }
 
-  const prompt = `You are a competitive intelligence analyst briefing a founder about "${companyName}".
-Given the findings below, write a concise executive summary (3-5 sentences) explaining
-what changed and why it matters strategically, then list 2-5 specific, concrete
-recommended actions the founder's team should take in response.
+  const prompt = `You are an analyst writing a ${config.briefNoun} about "${targetName}".
+Given the findings below, write a concise summary (3-5 sentences) explaining
+what's notable and why it matters, then list 2-5 ${config.actionsNoun}.
 
 Return strict JSON: {"summary": string, "recommendedActions": string[]}
 
@@ -136,21 +186,36 @@ ${JSON.stringify(findings, null, 2)}`;
   });
 }
 
-export async function runIntelligencePipeline(companyName: string): Promise<Brief> {
-  const rawResults = await tavilySearch(
-    `${companyName} pricing OR launch OR funding OR hiring news`,
-    { maxResults: 12, days: 14 }
-  );
+export async function runIntelligencePipeline(
+  targetName: string,
+  targetType: TargetType,
+  emit: Emit = () => {}
+): Promise<Brief> {
+  const config = TYPE_CONFIG[targetType];
 
+  emit({ type: "status", step: "searching", message: `Searching the web for ${targetName}...` });
+  const rawResults = await tavilySearch(config.searchQuery(targetName), { maxResults: 12, days: 14 });
+  emit({ type: "search_complete", count: rawResults.length });
+
+  emit({ type: "status", step: "triaging", message: "Triaging results with Nemotron Nano..." });
   const relevant = await triage(rawResults);
-  const findings = await condense(companyName, relevant);
-  const { summary, recommendedActions } = await synthesize(companyName, findings);
+  emit({ type: "triage_complete", relevantCount: relevant.length, totalCount: rawResults.length });
 
-  return {
-    companyName,
+  emit({ type: "status", step: "condensing", message: "Condensing findings with Nemotron Super..." });
+  const findings = await condense(targetName, targetType, relevant);
+  emit({ type: "condense_complete", findingsCount: findings.length });
+
+  emit({ type: "status", step: "synthesizing", message: "Synthesizing the brief with Nemotron 3 Ultra..." });
+  const { summary, recommendedActions } = await synthesize(targetName, targetType, findings);
+
+  const brief: Brief = {
+    targetName,
     summary,
     recommendedActions,
     findings,
     sourcesConsidered: rawResults.length,
   };
+
+  emit({ type: "done", brief });
+  return brief;
 }
